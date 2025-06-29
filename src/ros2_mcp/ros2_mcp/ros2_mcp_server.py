@@ -105,6 +105,9 @@ def serialize_ros_message(msg: Any, omit_arrays: bool = True) -> Dict[str, Any]:
         # Convert to ordered dict first
         msg_dict = message_to_ordereddict(msg)
         
+        # Convert any non-serializable types
+        msg_dict = _convert_ros_types(msg_dict)
+        
         # If omitting arrays, remove array fields
         if omit_arrays:
             return _remove_arrays(msg_dict)
@@ -117,6 +120,8 @@ def serialize_ros_message(msg: Any, omit_arrays: bool = True) -> Dict[str, Any]:
         for field in msg.get_fields_and_field_types():
             try:
                 value = getattr(msg, field)
+                # Convert ROS types to serializable formats
+                value = _convert_ros_value(value)
                 if omit_arrays and hasattr(value, '__len__') and not isinstance(value, str):
                     continue
                 result[field] = value
@@ -124,6 +129,61 @@ def serialize_ros_message(msg: Any, omit_arrays: bool = True) -> Dict[str, Any]:
                 logger.warning(f"Failed to extract field {field}: {field_error}")
                 continue
         return result
+
+
+def _convert_ros_types(data: Any) -> Any:
+    """Recursively convert ROS2 types to JSON-serializable types."""
+    if isinstance(data, dict):
+        result = {}
+        for key, value in data.items():
+            result[key] = _convert_ros_types(value)
+        return result
+    elif isinstance(data, list):
+        return [_convert_ros_types(item) for item in data]
+    else:
+        return _convert_ros_value(data)
+
+
+def _convert_ros_value(value: Any) -> Any:
+    """Convert a single ROS value to a serializable type."""
+    # Handle ROS2 Time objects
+    if hasattr(value, 'sec') and hasattr(value, 'nanosec'):
+        return {
+            "sec": value.sec,
+            "nanosec": value.nanosec,
+            "timestamp": value.sec + value.nanosec / 1e9
+        }
+    
+    # Handle ROS2 Duration objects
+    elif hasattr(value, 'sec') and hasattr(value, 'nanosec') and 'Duration' in str(type(value)):
+        return {
+            "sec": value.sec,
+            "nanosec": value.nanosec,
+            "duration": value.sec + value.nanosec / 1e9
+        }
+    
+    # Handle numpy arrays
+    elif hasattr(value, 'tolist'):
+        try:
+            return value.tolist()
+        except:
+            return str(value)
+    
+    # Handle bytes
+    elif isinstance(value, bytes):
+        try:
+            return value.decode('utf-8')
+        except:
+            return list(value)  # Convert to list of integers
+    
+    # For other complex objects, try to get their string representation
+    elif hasattr(value, '__dict__') and not isinstance(value, (str, int, float, bool)):
+        try:
+            return str(value)
+        except:
+            return f"<{type(value).__name__}>"
+    
+    return value
 
 
 def _remove_arrays(data: Any) -> Any:
@@ -199,8 +259,12 @@ def topic_echo(
         if received_count < message_count:
             try:
                 serialized = serialize_ros_message(msg, omit_arrays=not include_arrays)
+                # Convert ROS2 time to serializable format
+                ros_time = node.get_clock().now()
+                timestamp_sec = ros_time.nanoseconds / 1e9  # Convert to seconds as float
                 messages.append({
-                    "timestamp": node.get_clock().now().to_msg(),
+                    "timestamp": timestamp_sec,
+                    "timestamp_iso": f"{timestamp_sec:.9f}",  # Human readable format
                     "data": serialized
                 })
                 received_count += 1
@@ -404,7 +468,8 @@ def get_image(
         image_bytes = buffer.tobytes()
         
         logger.info(f"Successfully retrieved and encoded image from {topic_name}")
-        return MCPImage(data=image_bytes, media_type="image/png")
+        # Create MCP Image with just the data parameter
+        return MCPImage(data=image_bytes)
         
     except Exception as e:
         error_msg = f"Failed to encode image: {str(e)}"
