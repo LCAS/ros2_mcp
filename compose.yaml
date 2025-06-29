@@ -1,0 +1,31 @@
+services:
+  ros2-mcp-server:
+    image: lcas.lincoln.ac.uk/lcas/ros2-mcp:${TAG:-latest}
+    ports:
+      - "8000:8000"
+    environment:
+      # ROS2 configuration
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_DISTRO=humble
+      # MCP server configuration
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+    networks:
+      - ros2-network
+    restart: unless-stopped
+    command: >
+      bash -c "
+        source /opt/ros/humble/setup.bash &&
+        source /opt/ros_ws/install/setup.bash &&
+        ros2 run ros2_mcp_server
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  ros2-network:
+    driver: bridge

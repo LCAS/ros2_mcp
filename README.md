@@ -56,5 +56,36 @@ docker run -it --rm --network host ros2-mcp
 docker run -it --rm --network host -e ROS_DOMAIN_ID=42 ros2-mcp
 ```
 
+### Docker Compose (Recommended)
+
+For easier deployment with the SSE interface exposed on port 8000:
+
+```bash
+# Start the MCP server with Docker Compose
+docker compose up -d
+
+# View logs
+docker compose logs -f ros2-mcp-server
+
+# Stop the service
+docker compose down
+```
+
+#### Configuration
+
+The Docker Compose setup can be configured via environment variables in the `.env` file:
+
+- `DOCKER_REPO`: Docker repository name (default: `ros2-mcp`)
+- `TAG`: Image tag to use (default: `latest`)
+- `ROS_DOMAIN_ID`: ROS2 domain ID (default: `0`)
+- `MCP_HOST`: Host to bind the MCP server (default: `0.0.0.0`)
+- `MCP_PORT`: Port for the SSE interface (default: `8000`)
+
+#### SSE Endpoint
+
+Once running, the MCP server's SSE interface will be available at:
+- **Local**: `http://localhost:8000`
+- **Health check**: `http://localhost:8000/health`
+
 The Docker image is based on `lcas.lincoln.ac.uk/lcas/ros-docker-images:humble-2` and includes all necessary dependencies for the ROS2 MCP server.
 

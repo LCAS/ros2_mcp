@@ -47,6 +47,13 @@ RUN . /opt/ros/${ROS_DISTRO}/setup.sh && \
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc
 RUN echo "source /opt/ros_ws/install/setup.bash" >> /etc/bash.bashrc
 
+# Set default environment variables for MCP server
+ENV MCP_HOST=0.0.0.0
+ENV MCP_PORT=8000
+
+# Expose the SSE port
+EXPOSE 8000
+
 # Switch to ros user
 USER ros
 
