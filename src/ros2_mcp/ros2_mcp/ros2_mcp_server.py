@@ -47,8 +47,12 @@ async def ros2_lifespan(server: FastMCP) -> AsyncIterator[ROS2Context]:
     """Manage ROS2 node lifecycle."""
     logger.info("Initializing ROS2 context...")
     
-    # Initialize ROS2
-    rclpy.init()
+    # Check if ROS2 is already initialized
+    if not rclpy.ok():
+        logger.info("Initializing ROS2...")
+        rclpy.init()
+    else:
+        logger.info("ROS2 already initialized, reusing existing context")
     
     # Create ROS2 node
     node = Node('mcp_ros2_server')
@@ -61,9 +65,21 @@ async def ros2_lifespan(server: FastMCP) -> AsyncIterator[ROS2Context]:
     finally:
         # Cleanup
         logger.info("Shutting down ROS2 context...")
-        node.destroy_node()
-        rclpy.shutdown()
-        logger.info("ROS2 context shutdown complete")
+        try:
+            node.destroy_node()
+            logger.info("ROS2 node destroyed")
+        except Exception as e:
+            logger.warning(f"Error destroying node: {e}")
+        
+        # Only shutdown if we're still in a valid context
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+                logger.info("ROS2 context shutdown complete")
+            else:
+                logger.info("ROS2 context already shutdown")
+        except Exception as e:
+            logger.warning(f"Error during ROS2 shutdown: {e}")
 
 
 # Create MCP server with ROS2 lifespan management
@@ -129,34 +145,6 @@ def _remove_arrays(data: Any) -> Any:
         return data
 
 
-def _wait_for_messages(
-    node: Node,
-    subscription: Any,
-    message_count: int,
-    timeout_sec: float = 2.0
-) -> bool:
-    """
-    Wait for messages with proper timeout handling.
-    
-    Returns:
-        True if expected messages received, False if timeout
-    """
-    rate = node.create_rate(20)  # 20 Hz for responsive checking
-    elapsed = 0.0
-    dt = 0.05  # 50ms intervals
-    
-    # Get the callback's received count - this assumes the callback
-    # updates some external counter that we can check
-    start_time = node.get_clock().now()
-    
-    while elapsed < timeout_sec:
-        rclpy.spin_once(node, timeout_sec=dt)
-        elapsed += dt
-        rate.sleep()
-    
-    return False  # We'll handle this differently in each tool
-
-
 @mcp.tool()
 def topic_echo(
     ctx: Context,
@@ -216,33 +204,58 @@ def topic_echo(
                     "data": serialized
                 })
                 received_count += 1
-                logger.debug(f"Received message {received_count}/{message_count}")
+                logger.info(f"Received message {received_count}/{message_count} from {topic_name}")
             except Exception as e:
                 logger.error(f"Failed to serialize message: {e}")
     
-    # Create subscription
-    qos = QoSProfile(
-        reliability=ReliabilityPolicy.BEST_EFFORT,
-        history=HistoryPolicy.KEEP_LAST,
-        depth=message_count
-    )
+    # Create subscription with more reliable QoS
+    # Try RELIABLE first, fallback to BEST_EFFORT if needed
+    qos_profiles = [
+        QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=max(10, message_count)
+        ),
+        QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=max(10, message_count)
+        )
+    ]
     
-    subscription = node.create_subscription(
-        msg_class,
-        topic_name,
-        message_callback,
-        qos
-    )
+    subscription = None
+    for qos in qos_profiles:
+        try:
+            subscription = node.create_subscription(
+                msg_class,
+                topic_name,
+                message_callback,
+                qos
+            )
+            logger.info(f"Created subscription to {topic_name} with {qos.reliability.name} QoS")
+            break
+        except Exception as e:
+            logger.warning(f"Failed to create subscription with {qos.reliability.name} QoS: {e}")
+            continue
+    
+    if subscription is None:
+        error_msg = f"Failed to create subscription to topic '{topic_name}'"
+        logger.error(error_msg)
+        return {"error": error_msg}
+    
+    logger.info(f"Waiting for {message_count} messages from {topic_name}...")
     
     # Wait for messages with timeout
-    rate = node.create_rate(20)  # 20 Hz
-    elapsed = 0.0
-    dt = 0.05  # 50ms intervals
+    import time
+    start_time = time.time()
     
-    while received_count < message_count and elapsed < timeout_sec:
-        rclpy.spin_once(node, timeout_sec=dt)
-        elapsed += dt
-        rate.sleep()
+    while received_count < message_count and (time.time() - start_time) < timeout_sec:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        time.sleep(0.05)  # Small sleep to prevent busy waiting
+        
+        # Log progress every second
+        if int(time.time() - start_time) % 1 == 0 and int(time.time() - start_time) > 0:
+            logger.info(f"Waiting for messages... received {received_count}/{message_count}, elapsed: {time.time() - start_time:.1f}s")
     
     # Cleanup
     node.destroy_subscription(subscription)
@@ -361,14 +374,12 @@ def get_image(
     )
     
     # Wait for image with timeout
-    rate = node.create_rate(20)  # 20 Hz
-    elapsed = 0.0
-    dt = 0.05  # 50ms intervals
+    import time
+    start_time = time.time()
     
-    while not image_received and elapsed < timeout_sec:
-        rclpy.spin_once(node, timeout_sec=dt)
-        elapsed += dt
-        rate.sleep()
+    while not image_received and (time.time() - start_time) < timeout_sec:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        time.sleep(0.05)  # Small sleep to prevent busy waiting
     
     # Cleanup
     node.destroy_subscription(subscription)
@@ -500,11 +511,18 @@ def main():
     # Run the server - this will start the SSE server
     # The SSE endpoint will be available at the server's configured path
     try:
-        mcp.run()
+        mcp.run(transport="sse")
     except KeyboardInterrupt:
         logger.info("Server interrupted by user")
     except Exception as e:
         logger.error(f"Server error: {e}")
+        # Ensure cleanup on any error
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+                logger.info("Emergency ROS2 shutdown completed")
+        except Exception as cleanup_error:
+            logger.warning(f"Error during emergency cleanup: {cleanup_error}")
         raise
 
 
