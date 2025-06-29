@@ -706,6 +706,7 @@ def analyze_robot_state() -> types.Prompt:
             types.PromptMessage(
                 role="user",
                 content=types.TextContent(
+                    type="text",
                     text="""Analyze the current ROS2 robot system state. Please:
 
 1. First, get the system status using the ros2://system-status resource
@@ -755,6 +756,7 @@ def debug_topic_issues() -> types.Prompt:
             types.PromptMessage(
                 role="user",
                 content=types.TextContent(
+                    type="text",
                     text="""Debug the ROS2 topic: {topic_name}
 
 Expected behavior: {expected_behavior}
@@ -806,6 +808,7 @@ def sensor_data_collection() -> types.Prompt:
             types.PromptMessage(
                 role="user",
                 content=types.TextContent(
+                    type="text",
                     text="""Collect sensor data from the ROS2 system.
 
 Target sensor types: {sensor_types}
@@ -858,6 +861,7 @@ def robot_status_report() -> types.Prompt:
             types.PromptMessage(
                 role="user",
                 content=types.TextContent(
+                    type="text",
                     text="""Generate a comprehensive robot status report.
 
 Report type: {report_type}
