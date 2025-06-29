@@ -1,0 +1,16 @@
+./LICENSE
+./README.md
+devel/
+log/
+build/
+bin/
+lib/
+install/
+*~
+
+.git
+.gitignore
+.dockerignore
+.gitmodules
+
+.keep

@@ -1,0 +1,43 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "L-CAS Humble CUDA-OpenGL Devcontainer",
+	"build": {
+		"dockerfile": "./Dockerfile",
+		"args": {
+			"BASE_IMAGE": "lcas.lincoln.ac.uk/lcas/ros-docker-images:jammy-cuda12.2-humble-2"
+		},
+		"context": ".."
+	},
+
+	"forwardPorts": [5801],
+	"portsAttributes": {
+		"5801": {
+			"label": "desktop",
+			"onAutoForward": "openBrowser"
+		}
+	},
+
+	"postStartCommand": "/opt/entrypoint.sh /bin/true; .devcontainer/post-create.sh",
+
+	"remoteUser": "ros",
+	"updateRemoteUserUID": true, // ensure internal user has the same UID as the host user and update file permissions
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"GitHub.vscode-pull-request-github",
+				"ms-vscode.cpptools",
+				"JaehyunShim.vscode-ros2",
+				"nonanonno.vscode-ros2",
+				"deitry.colcon-helper",
+				"github.vscode-github-actions"
+			]
+		}
+	},
+	"hostRequirements": {
+		"gpu": "optional",
+		"cpus": 2,
+		"memory": "8gb"
+	}
+}
