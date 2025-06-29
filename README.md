@@ -28,3 +28,33 @@ The ROS2 MCP Server bridges the gap between AI assistants and robotics systems b
 - Python 3.8+
 - OpenCV (`cv_bridge` package)
 
+## Docker Usage
+
+### Pre-built Images
+
+Docker images are automatically built and published to the L-CAS registry:
+
+```bash
+docker pull lcas.lincoln.ac.uk/<repository-name>:latest
+```
+
+### Building Locally
+
+To build the Docker image locally:
+
+```bash
+docker build -t ros2-mcp .
+```
+
+### Running the Container
+
+```bash
+# Run with ROS2 network access
+docker run -it --rm --network host ros2-mcp
+
+# Run with custom ROS_DOMAIN_ID
+docker run -it --rm --network host -e ROS_DOMAIN_ID=42 ros2-mcp
+```
+
+The Docker image is based on `lcas.lincoln.ac.uk/lcas/ros-docker-images:humble-2` and includes all necessary dependencies for the ROS2 MCP server.
+
