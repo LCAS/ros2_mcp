@@ -24,6 +24,7 @@ import cv2
 import numpy as np
 
 from mcp.server.fastmcp import FastMCP, Context, Image as MCPImage
+from mcp import types
 
 
 # Configure logging to stderr
@@ -567,6 +568,332 @@ def introspect_interface(interface_type: str) -> Dict[str, Any]:
         error_msg = f"Failed to introspect interface '{interface_type}': {str(e)}"
         logger.error(error_msg)
         return {"error": error_msg}
+
+
+@mcp.resource("ros2://system-status")
+def get_ros2_system_status() -> str:
+    """
+    Resource providing live ROS2 system status information.
+    
+    Returns:
+        JSON string containing current ROS2 system status
+    """
+    logger.info("Generating ROS2 system status resource")
+    
+    # Get the ROS2 context from the server's lifespan context
+    # This requires accessing the FastMCP server instance
+    # For now, we'll use a simpler approach that doesn't require ctx
+    try:
+        # Check if ROS2 is initialized
+        if not rclpy.ok():
+            return json.dumps({
+                "timestamp": 0,
+                "error": "ROS2 not initialized",
+                "system_health": {
+                    "rclpy_ok": False,
+                    "node_active": False,
+                    "discovery_working": False
+                }
+            }, indent=2)
+        
+        # Create a temporary node for status gathering
+        temp_node = Node('mcp_status_node')
+        node = temp_node
+    
+        # Get topic information
+        topic_list = node.get_topic_names_and_types()
+        topics_by_type = {}
+        image_topics = []
+        
+        for topic_name, topic_types in topic_list:
+            for topic_type in topic_types:
+                if topic_type not in topics_by_type:
+                    topics_by_type[topic_type] = []
+                topics_by_type[topic_type].append(topic_name)
+                
+                # Track image topics
+                if 'Image' in topic_type:
+                    image_topics.append(topic_name)
+        
+        # Get node names (requires ROS2 discovery)
+        try:
+            node_names = node.get_node_names()
+        except Exception as e:
+            logger.warning(f"Could not get node names: {e}")
+            node_names = ["Unable to retrieve node names"]
+        
+        # Get parameter information for our own node
+        try:
+            param_names = node.list_parameters([], 10).names
+        except Exception as e:
+            logger.warning(f"Could not get parameters: {e}")
+            param_names = []
+        
+        # Generate status report
+        status = {
+            "timestamp": node.get_clock().now().nanoseconds / 1e9,
+            "node_info": {
+                "mcp_node_name": node.get_name(),
+                "mcp_node_namespace": node.get_namespace(),
+                "discovered_nodes": node_names,
+                "node_count": len(node_names) if isinstance(node_names, list) else 0
+            },
+            "topics": {
+                "total_count": len(topic_list),
+                "by_type": topics_by_type,
+                "image_topics": image_topics,
+                "image_topic_count": len(image_topics)
+            },
+            "parameters": {
+                "available_params": param_names,
+                "param_count": len(param_names)
+            },
+            "system_health": {
+                "rclpy_ok": rclpy.ok(),
+                "node_active": True,
+                "discovery_working": len(node_names) > 0 if isinstance(node_names, list) else False
+            }
+        }
+        
+        logger.info(f"System status generated: {len(topic_list)} topics, {len(node_names) if isinstance(node_names, list) else 0} nodes")
+        
+        # Cleanup temporary node
+        temp_node.destroy_node()
+        
+        return json.dumps(status, indent=2)
+        
+    except Exception as e:
+        error_status = {
+            "timestamp": 0,
+            "error": f"Failed to generate system status: {str(e)}",
+            "system_health": {
+                "rclpy_ok": rclpy.ok(),
+                "node_active": False,
+                "discovery_working": False
+            }
+        }
+        logger.error(f"Error generating system status: {e}")
+        
+        # Try to cleanup temporary node if it exists
+        try:
+            if 'temp_node' in locals():
+                temp_node.destroy_node()
+        except:
+            pass
+            
+        return json.dumps(error_status, indent=2)
+
+
+@mcp.prompt()
+def analyze_robot_state() -> types.Prompt:
+    """
+    Prompt for analyzing the current state of the robot system.
+    
+    This prompt helps LLMs understand and analyze the current ROS2 system state,
+    including active topics, available sensors, and system health.
+    """
+    return types.Prompt(
+        name="analyze_robot_state",
+        description="Analyze the current state of the ROS2 robot system",
+        arguments=[
+            types.PromptArgument(
+                name="focus_area",
+                description="Specific area to focus analysis on (e.g., 'sensors', 'navigation', 'vision', 'all')",
+                required=False
+            )
+        ],
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(
+                    text="""Analyze the current ROS2 robot system state. Please:
+
+1. First, get the system status using the ros2://system-status resource
+2. List all available topics to understand what sensors and systems are active
+3. Based on the focus area (if specified), provide a detailed analysis of:
+   - System health and connectivity
+   - Available sensors and their types
+   - Active topics and their publication status
+   - Any potential issues or recommendations
+
+If a focus area is specified, concentrate on that particular aspect:
+- 'sensors': Focus on sensor topics, image streams, and sensor health
+- 'navigation': Look for navigation-related topics and localization data
+- 'vision': Analyze camera feeds and computer vision topics
+- 'all': Provide comprehensive system analysis
+
+Please provide actionable insights and suggest specific tools or topics to investigate further if needed."""
+                )
+            )
+        ]
+    )
+
+
+@mcp.prompt()
+def debug_topic_issues() -> types.Prompt:
+    """
+    Prompt for debugging ROS2 topic communication issues.
+    
+    This prompt guides LLMs through systematic topic debugging procedures.
+    """
+    return types.Prompt(
+        name="debug_topic_issues",
+        description="Debug ROS2 topic communication and data flow issues",
+        arguments=[
+            types.PromptArgument(
+                name="topic_name",
+                description="Name of the specific topic to debug",
+                required=True
+            ),
+            types.PromptArgument(
+                name="expected_behavior",
+                description="Description of what the topic should be doing",
+                required=False
+            )
+        ],
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(
+                    text="""Debug the ROS2 topic: {topic_name}
+
+Expected behavior: {expected_behavior}
+
+Please perform the following diagnostic steps:
+
+1. First, verify the topic exists by listing all available topics
+2. Check the topic's message type and structure using introspect_interface
+3. Attempt to echo messages from the topic with different timeout values
+4. Analyze the message content and frequency
+5. If it's an image topic, try to retrieve and analyze image data
+
+Based on your findings, diagnose potential issues such as:
+- Topic not publishing (no data received)
+- Incorrect message format or encoding
+- Network/timing issues
+- Publisher/subscriber compatibility problems
+
+Provide specific recommendations for resolving any identified issues."""
+                )
+            )
+        ]
+    )
+
+
+@mcp.prompt()
+def sensor_data_collection() -> types.Prompt:
+    """
+    Prompt for systematic sensor data collection and analysis.
+    
+    This prompt helps LLMs efficiently collect and analyze sensor data from the robot.
+    """
+    return types.Prompt(
+        name="sensor_data_collection",
+        description="Collect and analyze sensor data from the ROS2 system",
+        arguments=[
+            types.PromptArgument(
+                name="sensor_types",
+                description="Comma-separated list of sensor types to focus on (e.g., 'camera,lidar,imu')",
+                required=False
+            ),
+            types.PromptArgument(
+                name="duration_seconds",
+                description="How long to collect data for each sensor (default: 2)",
+                required=False
+            )
+        ],
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(
+                    text="""Collect sensor data from the ROS2 system.
+
+Target sensor types: {sensor_types}
+Collection duration: {duration_seconds} seconds per sensor
+
+Please follow this systematic approach:
+
+1. Get the current system status to identify available sensors
+2. List all topics and identify sensor-related topics
+3. For each relevant sensor type:
+   - Camera/Image sensors: Use get_image tool to capture current images
+   - Other sensors: Use topic_echo to collect recent data samples
+4. Analyze the collected data for:
+   - Data quality and completeness
+   - Sensor calibration status
+   - Timestamp consistency
+   - Any anomalies or error conditions
+
+If no specific sensor types are provided, collect data from all available sensors.
+
+Provide a summary of:
+- What sensors are active and responding
+- Quality assessment of each sensor's data
+- Any detected issues or recommendations
+- Suggestions for further investigation if needed"""
+                )
+            )
+        ]
+    )
+
+
+@mcp.prompt()
+def robot_status_report() -> types.Prompt:
+    """
+    Prompt for generating comprehensive robot status reports.
+    
+    This prompt creates detailed reports suitable for operators or maintenance teams.
+    """
+    return types.Prompt(
+        name="robot_status_report",
+        description="Generate a comprehensive robot status report",
+        arguments=[
+            types.PromptArgument(
+                name="report_type",
+                description="Type of report: 'operational', 'maintenance', 'diagnostic'",
+                required=False
+            )
+        ],
+        messages=[
+            types.PromptMessage(
+                role="user",
+                content=types.TextContent(
+                    text="""Generate a comprehensive robot status report.
+
+Report type: {report_type}
+
+Please create a structured report including:
+
+**System Overview:**
+1. Get the ROS2 system status resource
+2. List all active topics and nodes
+3. Assess overall system health
+
+**Sensor Status:**
+4. Identify all sensor topics
+5. Test key sensors for responsiveness
+6. Report on data quality and availability
+
+**Communication Health:**
+7. Check topic publication rates
+8. Identify any communication issues
+9. Verify critical data flows
+
+**Recommendations:**
+10. Highlight any issues requiring attention
+11. Suggest maintenance actions if needed
+12. Recommend monitoring priorities
+
+Format the report based on the report type:
+- 'operational': Focus on current performance and immediate issues
+- 'maintenance': Emphasize system health and preventive actions
+- 'diagnostic': Detailed technical analysis for troubleshooting
+
+Make the report actionable and include specific topic names, error details, and next steps where applicable."""
+                )
+            )
+        ]
+    )
 
 
 def main():
