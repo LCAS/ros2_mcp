@@ -1,6 +1,6 @@
 services:
   ros2-mcp-server:
-    image: lcas.lincoln.ac.uk/lcas/ros2-mcp:${TAG:-latest}
+    image: lcas.lincoln.ac.uk/lcas/ros2_mcp:${TAG:-latest}
     ports:
       - "8000:8000"
     environment:
