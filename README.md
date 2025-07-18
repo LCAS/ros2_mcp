@@ -138,7 +138,7 @@ Example for Claude Desktop:
         "run",
         "mcp-proxy",
         "http://localhost:8000/sse"
-      ],
+      ]
     }
   }
 }
