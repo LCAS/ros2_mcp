@@ -28,6 +28,40 @@ The ROS2 MCP Server bridges the gap between AI assistants and robotics systems b
 - Python 3.8+
 - OpenCV (`cv_bridge` package)
 
+### using in your ROS2 workspace
+
+To use this module in your ROS2 workspace, follow these steps:
+
+1. **Clone the repository** into your ROS2 workspace's `src` directory:
+    ```bash
+    cd ~/your_ros2_workspace/src
+    git clone <repository-url>
+    ```
+
+2. **Install dependencies** using rosdep to automatically handle both ROS and pip dependencies:
+    ```bash
+    cd ~/your_ros2_workspace
+    rosdep install -i --from-paths src/
+    ```
+    This will install the required `mcp[cli]` pip dependency along with any other ROS dependencies.
+
+3. **Build the workspace**:
+    ```bash
+    colcon build
+    ```
+
+4. **Source the workspace**:
+    ```bash
+    source install/setup.bash
+    ```
+
+5. **Run the nodes** as needed:
+    ```bash
+    ros2 run ros2_mcp <node_name>
+    ```
+
+**Note:** Make sure you have Python 3 and pip installed on your system, as the MCP CLI tools require Python dependencies that will be installed automatically through rosdep.
+
 ## Docker Usage
 
 ### Pre-built Images
