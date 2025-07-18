@@ -115,11 +115,31 @@ The Docker Compose setup can be configured via environment variables in the `.en
 - `MCP_HOST`: Host to bind the MCP server (default: `0.0.0.0`)
 - `MCP_PORT`: Port for the SSE interface (default: `8000`)
 
-#### SSE Endpoint
+## Using the SSE Endpoint with an LLM
 
 Once running, the MCP server's SSE interface will be available at:
-- **Local**: `http://localhost:8000`
+- **Local**: `http://localhost:8000/sse`
 - **Health check**: `http://localhost:8000/health`
 
-The Docker image is based on `lcas.lincoln.ac.uk/lcas/ros-docker-images:humble-2` and includes all necessary dependencies for the ROS2 MCP server.
+### Expose to e.g. Claude
 
+To expose the MCP server to external AI assistants like Claude, the simplest is to use `mcp-proxy` to expose the SSE endpoint directly as an STDIO MCP server (see https://github.com/sparfenyuk/mcp-proxy?tab=readme-ov-file#12-example-usage):
+
+
+Example for Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "mcp-proxy": {
+      "command": "uv",
+      "args": [
+        "tool",
+        "run",
+        "mcp-proxy",
+        "http://localhost:8000/sse"
+      ],
+    }
+  }
+}
+```
