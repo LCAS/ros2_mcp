@@ -21,6 +21,7 @@ import rosidl_runtime_py
 from rosidl_runtime_py.utilities import get_message
 from rosidl_runtime_py import message_to_ordereddict
 from sensor_msgs.msg import Image, CameraInfo
+from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
@@ -711,6 +712,115 @@ def introspect_interface(interface_type: str) -> Dict[str, Any]:
     except Exception as e:
         error_msg = f"Failed to introspect interface '{interface_type}': {str(e)}"
         logger.error(error_msg)
+        return {"error": error_msg}
+
+
+@mcp.tool()
+def drive_robot(
+    ctx: Context,
+    linear_x: float = 0.0,
+    linear_y: float = 0.0,
+    linear_z: float = 0.0,
+    angular_x: float = 0.0,
+    angular_y: float = 0.0,
+    angular_z: float = 0.0,
+    duration_sec: float = 1.0,
+    topic_name: str = "/cmd_vel",
+) -> Dict[str, Any]:
+    """
+    Drive the robot by publishing velocity commands to a Twist topic.
+
+    Args:
+        linear_x: Linear velocity in x direction (forward/backward) in m/s
+        linear_y: Linear velocity in y direction (left/right) in m/s  
+        linear_z: Linear velocity in z direction (up/down) in m/s
+        angular_x: Angular velocity around x axis (roll) in rad/s
+        angular_y: Angular velocity around y axis (pitch) in rad/s
+        angular_z: Angular velocity around z axis (yaw/turn) in rad/s
+        duration_sec: Duration to send commands in seconds (default: 1.0)
+        topic_name: Name of the velocity command topic (default: "/cmd_vel")
+
+    Returns:
+        Dictionary containing the result of the drive command
+    """
+    logger.info(f"Driving robot on topic: {topic_name}")
+    logger.info(f"Linear: ({linear_x}, {linear_y}, {linear_z}), Angular: ({angular_x}, {angular_y}, {angular_z})")
+    logger.info(f"Duration: {duration_sec}s")
+
+    ros2_ctx = ctx.request_context.lifespan_context
+    node = ros2_ctx.node
+
+    try:
+        # Create publisher for velocity commands
+        publisher = node.create_publisher(Twist, topic_name, 10)
+        
+        # Create Twist message
+        twist_msg = Twist()
+        twist_msg.linear.x = linear_x
+        twist_msg.linear.y = linear_y
+        twist_msg.linear.z = linear_z
+        twist_msg.angular.x = angular_x
+        twist_msg.angular.y = angular_y
+        twist_msg.angular.z = angular_z
+
+        # Calculate how many messages to send (10 Hz publishing rate)
+        publish_rate_hz = 10.0
+        num_messages = int(duration_sec * publish_rate_hz)
+        sleep_time = 1.0 / publish_rate_hz
+
+        logger.info(f"Publishing {num_messages} velocity commands at {publish_rate_hz} Hz")
+
+        # Publish velocity commands for the specified duration
+        messages_sent = 0
+        start_time = time.time()
+
+        for i in range(num_messages):
+            publisher.publish(twist_msg)
+            messages_sent += 1
+            
+            # Log progress every second
+            if i % int(publish_rate_hz) == 0:
+                elapsed = time.time() - start_time
+                logger.info(f"Sent {messages_sent} commands, elapsed: {elapsed:.1f}s")
+            
+            # Sleep to maintain publishing rate
+            time.sleep(sleep_time)
+
+        # Send a final stop command
+        stop_msg = Twist()  # All velocities default to 0.0
+        publisher.publish(stop_msg)
+        messages_sent += 1
+
+        elapsed_time = time.time() - start_time
+        
+        # Cleanup
+        node.destroy_publisher(publisher)
+
+        logger.info(f"Successfully sent {messages_sent} velocity commands over {elapsed_time:.2f}s")
+        
+        return {
+            "topic": topic_name,
+            "messages_sent": messages_sent,
+            "duration_actual": elapsed_time,
+            "duration_requested": duration_sec,
+            "velocities": {
+                "linear": {"x": linear_x, "y": linear_y, "z": linear_z},
+                "angular": {"x": angular_x, "y": angular_y, "z": angular_z},
+            },
+            "status": "completed",
+        }
+
+    except Exception as e:
+        error_msg = f"Failed to drive robot: {str(e)}"
+        logger.error(error_msg)
+        
+        # Try to cleanup publisher if it exists
+        try:
+            if 'publisher' in locals():
+                node.destroy_publisher(publisher)
+        except:
+            pass
+            
         return {"error": error_msg}
 
 

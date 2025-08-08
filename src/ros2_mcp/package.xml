@@ -8,6 +8,7 @@
   <license>Apache-2.0</license>
 
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>rclpy</depend>
   <depend>rosidl_runtime_py</depend>
   <depend>cv_bridge</depend>
