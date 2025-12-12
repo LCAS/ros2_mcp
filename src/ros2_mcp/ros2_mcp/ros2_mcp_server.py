@@ -1168,7 +1168,7 @@ def main():
     # Run the server - this will start the SSE server
     # The SSE endpoint will be available at the server's configured path
     try:
-        mcp.run(transport="sse")
+        mcp.run(transport="sse", host="0.0.0.0")
     except KeyboardInterrupt:
         logger.info("Server interrupted by user")
     except Exception as e:
