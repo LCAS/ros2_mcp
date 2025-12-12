@@ -17,7 +17,7 @@ services:
       bash -c "
         source /opt/ros/humble/setup.bash &&
         source /opt/ros_ws/install/setup.bash &&
-        ros2 run ros2_mcp_server
+        ros2 run ros2_mcp ros2_mcp_server
       "
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
